@@ -1,6 +1,17 @@
-node_modules
-dist
-dist-ssr
-*.local
+.env
+*.env.local
+
+# editors / OS
 .DS_Store
-*.tsbuildinfo
+
+# python (apps/api)
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# node (apps/web)
+node_modules/
+dist/
+dist-ssr/
+*.local
