@@ -4,10 +4,8 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
@@ -22,9 +20,8 @@ services:
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    env_file:
+      - .env
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -38,35 +35,36 @@ services:
 
   storage-init:
     image: minio/mc:latest
+    env_file:
+      - .env
     depends_on:
       storage:
         condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET: ${MINIO_BUCKET}
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://storage:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
-      mc mb --ignore-existing local/$$MINIO_BUCKET &&
-      mc anonymous set none local/$$MINIO_BUCKET
-      "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "storage-init: waiting for storage API to accept credentials..."
+        i=0
+        until mc alias set local http://storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+          i=$$((i+1))
+          if [ "$$i" -ge 30 ]; then
+            echo "storage-init: giving up after 30 attempts"
+            exit 1
+          fi
+          sleep 2
+        done
+        echo "storage-init: alias set, ensuring bucket $$MINIO_BUCKET exists..."
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set none "local/$$MINIO_BUCKET"
+        echo "storage-init: done — bucket $$MINIO_BUCKET is ready"
 
   api:
     build: ./apps/api
     restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      MINIO_ENDPOINT: storage:9000
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET: ${MINIO_BUCKET}
-      MINIO_USE_SSL: ${MINIO_USE_SSL}
-      API_SECRET_KEY: ${API_SECRET_KEY}
-      API_CORS_ORIGINS: ${API_CORS_ORIGINS}
-      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME}
-      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS}
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:
@@ -85,8 +83,8 @@ services:
   web:
     build: ./apps/web
     restart: unless-stopped
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    env_file:
+      - .env
     ports:
       - "5173:5173"
     volumes:
